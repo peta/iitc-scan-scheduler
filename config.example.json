@@ -1,0 +1,24 @@
+{
+	"webSecurity": false,
+	"cookiesFile": "data/cookies",
+	"localStoragePath": "data/localStorage",
+	"localStorageQuota": 65536,
+	"localToRemoteUrlAccess": true,
+	"diskCache": true,
+	"maxDiskCacheSize": 16384,
+
+	"browserViewport": {
+		"width": 1600,
+		"height": 1200
+	},
+	"mutedLogTypes": [],
+	"defaultZoom": 17,
+	"autoRunScanner": true,
+	"pauseAfterSectorScan": 30,
+	"pauseAfterFieldScan": 60,
+	"pauseBeforeRescan": 300,
+	"username": "john.doe@gmail.com",
+	"password": "cheeseburger",
+	"scheduleDataFile": "data/schedule.json",
+	"schedulerHtmlFile": "assets/scheduler.html"
+}

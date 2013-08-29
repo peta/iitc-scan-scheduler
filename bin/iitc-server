@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$dir/.."
+bin/phantomjs/1.9.1-macosx/bin/phantomjs --config=config.json js/iitc-server.js

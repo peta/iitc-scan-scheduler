@@ -1,0 +1,4 @@
+.idea/
+tmp/
+bin/phantomjs/1.9.1-macosx/examples/
+config.json
