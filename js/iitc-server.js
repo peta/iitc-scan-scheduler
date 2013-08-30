@@ -14,7 +14,7 @@ phantom.injectJs('js/gjv.js');
 var ctx = new function() {
 	this.config = JSON.parse(fs.read('config.json'));
 	this.page = null;
-	this.scannerEnabled = !!this.config.autoRunScanner;
+	this.scannerEnabled = !!this.config.scannerService;
 };
 
 var debug = {
@@ -148,7 +148,7 @@ IServer.Scanner = {
 				if ('Polygon' !== feat.geometry.type) continue;
 				// Calculate boundary rectangle
 				bbox = IServer.Map.boundingBoxAroundCoords(feat.geometry.coordinates[0]);
-				debug.log('INFO', 'Found Polygon feature object', JSON.stringify(bbox));
+				debug.log('SCANNER', 'Found Polygon feature object', JSON.stringify(bbox));
 				// Generate LatLng boundaries that can directly be consumed by Leaflet
 				var nSectors = 0,
 					sectors = [];
@@ -212,149 +212,152 @@ IServer.initialize = function() {
 	};
 
 	// Install screenshot webservice
-	ctx.ssPort = 9001;
-	ctx.ssServer = require('webserver').create();
-	ctx.ssServiceAvail = ctx.ssServer.listen(ctx.ssPort, function (req, resp) {
-		var caption = 'Screenshot at ' + new Date();
-		debug.log('ScreenshotService', 'Screenshot requested at ' + new Date());
-		resp.writeHead(200, {
-			'Cache': 'no-cache',
-			'Content-Type': 'text/html'
+	if (ctx.config.screenshotService) {
+		ctx.ssPort = ctx.config.screenshotServicePort;
+		ctx.ssServer = require('webserver').create();
+		ctx.ssServiceAvail = ctx.ssServer.listen(ctx.ssPort, function (req, resp) {
+			var caption = 'Screenshot at ' + new Date();
+			debug.log('ScreenshotService', 'Screenshot requested at ' + new Date());
+			resp.writeHead(200, {
+				'Cache': 'no-cache',
+				'Content-Type': 'text/html'
+			});
+			resp.write('<html><head><title>'+caption+'</title></head><body>');
+			resp.write('<div style="text-align:center;">');
+			resp.write('<p>'+caption+' &nbsp;&nbsp;<span><input type="checkbox" id="autorefresh" checked/>Auto-refresh</span></p><p><img src="data:image/png;base64,'+ctx.page.renderBase64('PNG')+'" width="70%"/></p></div>');
+			resp.write('<script type="text/javascript">setInterval(function(){ if(document.getElementById("autorefresh").checked)location.reload();}, 10*1000);</script></body></html>');
+			resp.close();
 		});
-		resp.write('<html><head><title>'+caption+'</title></head><body>');
-		resp.write('<div style="text-align:center;">');
-		resp.write('<p>'+caption+' &nbsp;&nbsp;<span><input type="checkbox" id="autorefresh" checked/>Auto-refresh</span></p><p><img src="data:image/png;base64,'+ctx.page.renderBase64('PNG')+'" width="70%"/></p></div>');
-		resp.write('<script type="text/javascript">setInterval(function(){ if(document.getElementById("autorefresh").checked)location.reload();}, 10*1000);</script></body></html>');
-		resp.close();
-	});
-	console.log((ctx.ssServiceAvail)
-		? '[SUCCESS] Screenshot webservice available on port '+ctx.ssPort
-		: '[FAIL] Screnshot webservice could not be started on port '+ctx.ssPort);
+		console.log((ctx.ssServiceAvail)
+			? '[SUCCESS] Screenshot webservice available on port '+ctx.ssPort
+			: '[FAIL] Screnshot webservice could not be started on port '+ctx.ssPort);
+	}
 
 	// Install scanner schedule editor service
-	ctx.schedulerPort = 9002;
-	ctx.schedulerServer = require('webserver').create();
-	ctx.schedulerServiceAvail = ctx.schedulerServer.listen(ctx.schedulerPort, function (req, resp) {
-		if ('GET' === req.method && (/^\/(?:assets|js)\//).test(req.url)) {
-			// Static file requested
-			// TODO: Sanitize resource url before using it as file path (directory traversal asf.)
-			var fpath = '.'+req.url;
-			if (fs.exists(fpath) && fs.isFile(fpath)) {
-				var ext = fpath.substr(1 + fpath.lastIndexOf('.')),
-					isImg = (/(png|jpg|jpeg|gif)/i).test(ext),
-					mime = (isImg ? 'image' : 'text') + '/' + ext,
-					fStream = fs.open(fpath, isImg ? 'rb' : 'r');
+	if (ctx.config.scannerService) {
+		ctx.schedulerPort = ctx.config.scannerServicePort;
+		ctx.schedulerServer = require('webserver').create();
+		ctx.schedulerServiceAvail = ctx.schedulerServer.listen(ctx.schedulerPort, function (req, resp) {
+			if ('GET' === req.method && (/^\/(?:assets|js)\//).test(req.url)) {
+				// Static file requested
+				// TODO: Sanitize resource url before using it as file path (directory traversal asf.)
+				var fpath = '.'+req.url;
+				if (fs.exists(fpath) && fs.isFile(fpath)) {
+					var ext = fpath.substr(1 + fpath.lastIndexOf('.')),
+						isImg = (/(png|jpg|jpeg|gif)/i).test(ext),
+						mime = (isImg ? 'image' : 'text') + '/' + ext,
+						fStream = fs.open(fpath, isImg ? 'rb' : 'r');
 
-				debug.log('SchedulerService', 'Client requested static file: "'+req.url+'", '+mime+', '+fs.size(fpath)+'B');
-				resp.statusCode = 200;
-				resp.setHeader('Content-Type', mime);
-				resp.setHeader('Cache-Control', 'max-age=31556926');
-				resp.setHeader('Content-Length', fs.size(fpath));
-				if (isImg) resp.setEncoding('binary');
-				resp.write(fStream.read());
-			} else {
-				debug.log('SchedulerService', 'Requested resource not found or is not a file: "'+req.url+'"');
+					debug.log('SchedulerService', 'Client requested static file: "'+req.url+'", '+mime+', '+fs.size(fpath)+'B');
+					resp.statusCode = 200;
+					resp.setHeader('Content-Type', mime);
+					resp.setHeader('Cache-Control', 'max-age=31556926');
+					resp.setHeader('Content-Length', fs.size(fpath));
+					if (isImg) resp.setEncoding('binary');
+					resp.write(fStream.read());
+				} else {
+					debug.log('SchedulerService', 'Requested resource not found or is not a file: "'+req.url+'"');
+					resp.writeHead(404, { 'Content-Type': 'text/plain' });
+					resp.write('404 – Ooops!');
+				}
+				resp.closeGracefully();
+				return;
+			}
+
+			var respData = null,
+				respType = 'application/json; charset=UTF-8';
+
+			// Route to scheduler
+			if ('/scheduler' === req.url) {
+				var schedDataFpath = fs.absolute(ctx.config.scheduleDataFile);
+				// Just serve editor file?
+				if ('GET' === req.method) {
+					var caption = 'Editor page requested at ' + new Date();
+					debug.log('SchedulerService', caption);
+					respType = 'text/html';
+					// Load editor file and embed GeoJSON data file
+					respData = fs.read(ctx.config.schedulerHtmlFile);
+					if (fs.exists(schedDataFpath) && fs.isFile(schedDataFpath))
+						respData = respData.replace('/*GEOJSON_OBJ*/', fs.read(schedDataFpath));
+
+					// Or update schedule database?
+				} else if ('POST' === req.method && 0 === req.headers['Content-Type'].indexOf('application/json')) {
+					debug.log('SchedulerService', 'Schedule data update attempted');
+					// Parse request data
+					var parseSucc = false;
+					try {
+						var scheduleData = JSON.parse(req.post);
+						parseSucc = true;
+					} catch(exc) {
+						var errMsg = 'Error parsing JSON POST data: '+exc.message;
+						debug.log('ERROR', errMsg);
+						resp.writeHead(500, { 'Content-Type': 'text/html' });
+						resp.write('<pre>'+errMsg+'</pre>');
+						resp.close();
+						return;
+					}
+					// Process+persist data
+					respData = {};
+					if (parseSucc && scheduleData && GJV.valid(scheduleData)) {
+						debug.log('SchedulerService', 'Schedule data successfully parsed');
+						try {
+							fs.write(schedDataFpath, req.post);
+							debug.log('SchedulerService', 'Schedule database in file "'+schedDataFpath+'" updated');
+							respData.status = 0;
+						} catch(exc) {
+							debug.log('SchedulerService', 'ERROR: Could not write schedule data to file "'+schedDataFpath+'": '+exc.message);
+							respData.status = 1;
+							respData.message = exc.message;
+						}
+					} else {
+						debug.log('SchedulerService', 'ERROR: Received data is no valid GeoJSON data. Ignoring.');
+						respData.status = 0;
+						respData.message = 'Received data is no valid GeoJSON data. Ignoring.';
+					}
+				}
+			}
+
+			// Route to scanner
+			if ('/scanner/status' === req.url) {
+				if ('POST' === req.method) {
+					var postData = JSON.parse(req.post);
+					ctx.scannerEnabled = !!postData.enabled;
+					respData = {
+						status: 0,
+						message: 'Scanner turned ' + ((ctx.scannerEnabled) ? 'ON' : 'OFF')
+					};
+				} else if ('GET' === req.method) {
+					respData = {
+						status: 0,
+						message: (ctx.scannerEnabled) ? 'on' : 'off',
+						enabled: ctx.scannerEnabled
+					};
+				}
+			}
+
+			// Answer request
+			if (null === respData) {
+				debug.log('SchedulerService', 'Requested resource not found: "'+req.url+'"');
 				resp.writeHead(404, { 'Content-Type': 'text/plain' });
 				resp.write('404 – Ooops!');
-			}
-			resp.closeGracefully();
-			return;
-		}
-
-		var respData = null;
-
-		// Route to scheduler
-		if ('/scheduler' === req.url) {
-			var schedDataFpath = fs.absolute(ctx.config.scheduleDataFile);
-			// Just serve editor file?
-			if ('GET' === req.method) {
-				var caption = 'Editor page requested at ' + new Date();
-				debug.log('SchedulerService', caption);
+			} else {
 				resp.writeHead(200, {
-					'Content-Type': 'text/html',
-					'Cache-Control': 'no-cache',
-					'Cache': 'no-cache'
+					'Content-Type': respType,
+					'Cache': 'no-cache',
+					'Cache-Control': 'no-cache'
 				});
-				// Load editor file and embed GeoJSON data file
-				var htmlDoc = fs.read(ctx.config.schedulerHtmlFile);
-				if (fs.exists(schedDataFpath) && fs.isFile(schedDataFpath))
-					htmlDoc = htmlDoc.replace('/*GEOJSON_OBJ*/', fs.read(schedDataFpath));
-				resp.write(htmlDoc);
-
-			// Or update schedule database?
-			} else if ('POST' === req.method && 0 === req.headers['Content-Type'].indexOf('application/json')) {
-				debug.log('SchedulerService', 'Schedule data update attempted');
-				// Parse request data
-				var parseSucc = false;
-				try {
-					var scheduleData = JSON.parse(req.post);
-					parseSucc = true;
-				} catch(exc) {
-					var errMsg = 'Error parsing JSON POST data: '+exc.message;
-					debug.log('ERROR', errMsg);
-					resp.writeHead(500, { 'Content-Type': 'text/html' });
-					resp.write('<pre>'+errMsg+'</pre>');
-					resp.close();
-					return;
-				}
-				// Process+persist data
-				respData = {};
-				if (parseSucc && scheduleData && GJV.valid(scheduleData)) {
-					debug.log('SchedulerService', 'Schedule data successfully parsed');
-					try {
-						fs.write(schedDataFpath, req.post);
-						debug.log('SchedulerService', 'Schedule database in file "'+schedDataFpath+'" updated');
-						respData.status = 0;
-					} catch(exc) {
-						debug.log('SchedulerService', 'ERROR: Could not write schedule data to file "'+schedDataFpath+'": '+exc.message);
-						respData.status = 1;
-						respData.message = exc.message;
-					}
-				} else {
-					debug.log('SchedulerService', 'ERROR: Received data is no valid GeoJSON data. Ignoring.');
-					respData.status = 0;
-					respData.message = 'Received data is no valid GeoJSON data. Ignoring.';
-				}
+				resp.write(
+					(typeof respData === 'string')
+						? respData : JSON.stringify(respData));
 			}
-		}
 
-		// Route to scanner
-		if ('/scanner/status' === req.url) {
-			if ('POST' === req.method) {
-				var postData = JSON.parse(req.post);
-				ctx.scannerEnabled = !!postData.enabled;
-				respData = {
-					status: 0,
-					message: 'Scanner turned ' + ((ctx.scannerEnabled) ? 'ON' : 'OFF')
-				};
-			} else if ('GET' === req.method) {
-				respData = {
-					status: 0,
-					message: (ctx.scannerEnabled) ? 'on' : 'off',
-					enabled: ctx.scannerEnabled
-				};
-			}
-		}
-
-		// Answer request
-		if (null === respData) {
-			debug.log('SchedulerService', 'Requested resource not found: "'+req.url+'"');
-			resp.writeHead(404, { 'Content-Type': 'text/plain' });
-			resp.write('404 – Ooops!');
-		} else {
-			resp.writeHead(200, {
-				'Content-Type': 'application/json; charset=UTF-8',
-				'Cache': 'no-cache',
-				'Cache-Control': 'no-cache'
-			});
-			resp.write(JSON.stringify(respData));
-		}
-		// Done
-		resp.closeGracefully();
-	});
-	console.log((ctx.schedulerServiceAvail)
-		? '[SUCCESS] ScheduleEditor webservice available on port '+ctx.schedulerPort
-		: '[FAIL] ScheduleEditor webservice could not be started on port '+ctx.schedulerPort);
+			// Done
+			resp.closeGracefully();
+		});
+		console.log((ctx.schedulerServiceAvail)
+			? '[SUCCESS] ScheduleEditor webservice available on port '+ctx.schedulerPort
+			: '[FAIL] ScheduleEditor webservice could not be started on port '+ctx.schedulerPort);
+	}
 
 	// Create default page
 	ctx.page = require('webpage').create().extend({
