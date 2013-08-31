@@ -117,7 +117,7 @@ IServer.Scanner = {
     scanSector: function(bbox, onFinish) {
         debug.log('SCANNER', IServer.timestamp() + ': Scanning sector', JSON.stringify(bbox));
         ctx.page.evaluate(function(latLngBounds) {
-            window.map.fitBounds(latLngBounds);
+            IClient.Map.setScanArea(latLngBounds);
         }, bbox);
         window.setTimeout(function() {
             debug.log('SCANNER', IServer.timestamp() + ': Finished sector scan');
@@ -214,7 +214,8 @@ IServer.RPC = {
         debug.log('RPC', 'Archiving ' + msgs.result.length + ' public chat messages');
     },
     archivePortalData:  function(data) {
-        debug.log('RPC', 'Archiving portal data', JSON.stringify(data));
+        var portalEntities = JSON.stringify(data);
+        debug.log('RPC', 'Archiving portal data: ' + portalEntities.length + ' entities received');
     }
 };
 
@@ -516,12 +517,14 @@ page.open('http://www.ingress.com/intel', function(status) {
 
             // Start infinite async scanner loop
             var onScanComplete = function() {
+                    debug.log('APP', 'Muting client');
                     IServer.muteClient(true);
                     window.setTimeout(startScan, ctx.config.pauseBeforeRescan * 1000);
                 },
                 startScan = function() {
                     if (ctx.scannerEnabled) {
                         debug.log('SCANNER', IServer.timestamp() + ': Starting scan');
+                        debug.log('APP', 'Un-Muting client');
                         IServer.muteClient(false);
                         IServer.Scanner.scan(onScanComplete);
                     } else {
