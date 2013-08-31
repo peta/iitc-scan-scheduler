@@ -1,7 +1,5 @@
 # 24/7 Intel event scanner and aggregation server application
 
-__UPDATE 31/08/2013: Due to some changes to the Ingress Intel API this application is broken, since it depends on IITC. We're working on a solution. For more information see: [issue #518](https://github.com/jonatkins/ingress-intel-total-conversion/issues/518)__
-
 IMPORTANT: In order to use this application you need a working binary of phantomJS version 1.9.1. Here you can find prebuilt binaries and the source code: [http://phantomjs.org/download.html](http://phantomjs.org/download.html)
 
 ## Configuration file
