@@ -1,11 +1,11 @@
 // ==UserScript==
 // @id             ingress-intel-total-conversion@jonatkins
 // @name           IITC: Ingress intel map total conversion
-// @version        0.14.0.20130831.33557
+// @version        0.14.0.20130831.164915
 // @namespace      https://github.com/jonatkins/ingress-intel-total-conversion
 // @updateURL      https://secure.jonatkins.com/iitc/test/total-conversion-build.meta.js
 // @downloadURL    https://secure.jonatkins.com/iitc/test/total-conversion-build.user.js
-// @description    [jonatkins-test-2013-08-31-033557] Total conversion for the ingress intel map.
+// @description    [jonatkins-test-2013-08-31-164915] Total conversion for the ingress intel map.
 // @include        http://www.ingress.com/intel*
 // @include        https://www.ingress.com/intel*
 // @match          http://www.ingress.com/intel*
@@ -17,7 +17,7 @@
 // REPLACE ORIG SITE ///////////////////////////////////////////////////
 if(document.getElementsByTagName('html')[0].getAttribute('itemscope') != null)
     throw('Ingress Intel Website is down, not a userscript issue.');
-window.iitcBuildDate = '2013-08-31-033557';
+window.iitcBuildDate = '2013-08-31-164915';
 
 // disable vanilla JS
 window.onload = function() {};
@@ -822,7 +822,7 @@ function wrapper() {
     function boot() {
         window.debug.console.overwriteNativeIfRequired();
 
-        console.log('loading done, booting. Built: 2013-08-31-033557');
+        console.log('loading done, booting. Built: 2013-08-31-164915');
         if(window.deviceID) console.log('Your device ID: ' + window.deviceID);
         window.runOnSmartphonesBeforeBoot();
 
@@ -2459,11 +2459,34 @@ function wrapper() {
 
     // GAME STATUS ///////////////////////////////////////////////////////
     // MindUnit display
+
+    window.window.updateGameScoreFailCount = 0;
+
     window.updateGameScore = function(data) {
         if(!data) {
             window.postAjax('getGameScore', {}, window.updateGameScore);
             return;
         }
+
+        // hacky - but here is as good as any for a location
+        // the niantic servers have attempted to obsfucate the client/server protocol, by munging the request parameters
+        // detecting which munge set should be used is tricky - even the stock site gets it wrong sometimes
+        // to detect the problem and try a different set is easiest in a place where there's only a single request of that type
+        // sent at once, and it has no extra parameters. this method matches those requirements
+        if (data == '{"error": "invalid method params"}' || data.error) {
+            window.window.updateGameScoreFailCount++;
+            if (window.window.updateGameScoreFailCount < 5) {
+                window.activeRequestMungeSet = (window.activeRequestMungeSet+1) % window.requestParameterMunges.length;
+                console.warn('IITC munge issue - cycling to set '+window.activeRequestMungeSet);
+
+                updateGameScore();
+                return;
+            } else {
+                console.error('IITC munge issue - and retry limit reached. IITC will likely fail');
+            }
+        }
+
+        window.window.updateGameScoreFailCount = 0;
 
         var r = parseInt(data.result.resistanceScore), e = parseInt(data.result.enlightenedScore);
         var s = r+e;
@@ -3344,7 +3367,7 @@ function wrapper() {
 
         // refresh timers
         this.MOVE_REFRESH = 1; //refresh time to use after a move
-        this.STARTUP_REFRESH = 0.2; //refresh time used on first load of IITC
+        this.STARTUP_REFRESH = 2; //refresh time used on first load of IITC
         this.IDLE_RESUME_REFRESH = 5; //refresh time used after resuming from idle
         this.REFRESH = 60;  //minimum refresh time to use when not idle and not moving
         this.FETCH_TO_REFRESH_FACTOR = 2;  //refresh time is based on the time to complete a data fetch, times this value
@@ -5379,7 +5402,7 @@ function wrapper() {
     // UTILS + MISC  ///////////////////////////////////////////////////////
 
     window.aboutIITC = function(){
-        var v = 'jonatkins-test-2013-08-31-033557';
+        var v = 'jonatkins-test-2013-08-31-164915';
         var attrib = '<p>This project is licensed under the permissive <a href="http://www.isc.org/downloads/software-support-policy/isc-license/">ISC license</a>. Parts imported from other projects remain under their respective licenses:</p>\n\n<ul>\n<li><a href="https://github.com/bryanwoods/autolink-js">autolink-js by Bryan Woods; MIT</a></li>\n<li><a href="https://github.com/chriso/load.js">load.js by Chris O\'Hara; MIT</a></li>\n<li><a href="http://leafletjs.com/">leaflet.js; custom license (but appears free)</a></li>\n<li><a href="https://github.com/Leaflet/Leaflet.draw">leaflet.draw.js by jacobtoye; MIT</a></li>\n<li>\n<a href="https://github.com/shramov/leaflet-plugins">leaflet_google.js by Pavel Shramov; same as Leaflet</a> (modified, though)</li>\n<li><a href="https://github.com/jeromeetienne/jquery-qrcode">jquery.qrcode.js by Jerome Etienne; MIT</a></li>\n<li><a href="https://github.com/jawj/OverlappingMarkerSpiderfier-Leaflet">oms.min.js by George MacKerron; MIT</a></li>\n<li><a href="https://github.com/richadams/jquery-taphold">taphold.js by Rich Adams; unknown</a></li>\n<li><a href="https://github.com/kartena/Leaflet.Pancontrol">L.Control.Pan.js by Kartena AB; same as Leaflet</a></li>\n<li><a href="https://github.com/kartena/Leaflet.zoomslider">L.Control.Zoomslider.js by Kartena AB; same as Leaflet</a></li>\n<li>StackOverflow-CopyPasta is attributed in the source; <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-Wiki</a>\n</li>\n<li>all Ingress/Niantic related stuff obviously remains non-free and is still copyrighted by Niantic/Google</li>\n</ul>';
         var contrib = '<p>So far, these people have contributed:</p>\n\n<p><a href="https://github.com/Bananeweizen">Bananeweizen</a>,\n<a href="https://github.com/blakjakau">blakjakau</a>,\n<a href="https://github.com/boombuler">boombuler</a>,\n<a href="https://github.com/breunigs">breunigs</a>,\n<a href="https://github.com/cathesaurus">cathesaurus</a>,\n<a href="https://github.com/ccjon">ccjon</a>,\n<a href="https://github.com/cmrn">cmrn</a>,\n<a href="https://github.com/epf">epf</a>,\n<a href="https://github.com/Fragger">Fragger</a>,\n<a href="https://github.com/integ3r">integ3r</a>,\n<a href="https://github.com/j16sdiz">j16sdiz</a>,\n<a href="https://github.com/JasonMillward">JasonMillward</a>,\n<a href="https://github.com/jonatkins">jonatkins</a>,\n<a href="https://github.com/leCradle">leCradle</a>,\n<a href="https://github.com/Merovius">Merovius</a>,\n<a href="https://github.com/mledoze">mledoze</a>,\n<a href="https://github.com/OshiHidra">OshiHidra</a>,\n<a href="https://github.com/phoenixsong6">phoenixsong6</a>,\n<a href="https://github.com/Pirozek">Pirozek</a>,\n<a href="https://github.com/saithis">saithis</a>,\n<a href="https://github.com/Scrool">Scrool</a>,\n<a href="https://github.com/sorgo">sorgo</a>,\n<a href="https://github.com/tpenner">tpenner</a>,\n<a href="https://github.com/vita10gy">vita10gy</a>,\n<a href="https://github.com/Xelio">Xelio</a>,\n<a href="https://github.com/ZauberNerd">ZauberNerd</a>,\n<a href="https://github.com/waynn">waynn</a></p>'
         var a = ''
@@ -5472,55 +5495,82 @@ function wrapper() {
         return (d+"").replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1 ");
     }
 
+
+    window.requestParameterMunges = [
+        // set 0
+        {
+            method: '4kr3ofeptwgary2j',
+            boundsParamsList: 'n27qzc8389kgakyv',
+            id: '39031qie1i4aq563',
+            minLatE6: 'pg98bwox95ly0ouu',
+            minLngE6: 'eib1bkq8znpwr0g7',
+            maxLatE6: 'ilfap961rwdybv63',
+            maxLngE6: 'lpf7m1ifx0ieouzq',
+            timestampMs: '2ewujgywmum1yp49',
+            qk: 'bgxibcomzoto63sn',
+            desiredNumItems: 'tmb0vgxgp5grsnhp',
+            minTimestampMs: 'hljqffkpwlx0vtjt',
+            maxTimestampMs: 'sw317giy6x2xj9zm',
+            guids: 'pusjrhxxtyp5nois',
+            inviteeEmailAddress: 'cltkepgqkepfsyaq',
+            message: 'q0d6n7t1801bb6xu',
+            latE6: '5ygbhpxfnt1u9e4t',
+            lngE6: 'ak6twnljwwcgd7cj',
+            factionOnly: '0dvtbatgzcfccchh'
+        },
+
+        // set 1
+        {
+            method: 'uuo2zqhhy5bw80fu',
+            boundsParamsList: '5rc0561uauf6x13u',
+            id: 'bzeizowtguoyrrtt',
+            minLatE6: '7qej3eqg4sefuaac',
+            minLngE6: 'yqegc976egk5q9vo',
+            maxLatE6: '2odsgh99ix9bbtsb',
+            maxLngE6: 'g9jess8dwa2j8pwi',
+            timestampMs: '604f34zcu9zna0a5',
+            qk: 'y853tux9h7cb6xp3',
+            desiredNumItems: 'sfv5i7l6ouljz8vf',
+            minTimestampMs: 'y3g07dbnw6sklloj',
+            maxTimestampMs: '3pdl28aa27xvyhke',
+            guids: 'xp1pl2jm5hrh3bna',
+            inviteeEmailAddress: '2pyrttrp3gh38mmu',
+            message: 'zz54435vfc57nlg9',
+            latE6: 'cyltxjod3jhxgj8q',
+            lngE6: 'h9whcgcz6kpqkz80',
+            factionOnly: '37okcr7gvd5yn2lj'
+        },
+    ];
+    window.activeRequestMungeSet = undefined;
+
+    // attempt to guess the munge set in use, by looking therough the functions of the stock intel page for one of the munged params
+    window.detectActiveMungeSet = function() {
+        for (var m in window) {
+            // try and find the stock page functions
+            if (typeof window[m] == 'function' && m.length <= 3) {
+                var stockFunc = window[m].toString();
+                for (var i in window.requestParameterMunges) {
+                    if (stockFunc.indexOf (window.requestParameterMunges[i]['id']) >= 0) {
+                        console.log('IITC: found request munge set '+i+' in stock intel function "window.'+m+'()"');
+                        window.activeRequestMungeSet = i;
+                    }
+                }
+            }
+        }
+
+        if (window.activeRequestMungeSet===undefined) {
+            console.error('IITC: failed to find request munge set - IITC will likely fail');
+            window.activeRequestMungeSet = 0;
+        }
+    }
+
     // niantic now add some munging to the request parameters. so far, only two sets of this munging have been seen
     window.requestDataMunge = function(data) {
-        var requestMunges = [
-            // set 0
-            {
-                method: '4kr3ofeptwgary2j',
-                boundsParamsList: 'n27qzc8389kgakyv',
-                id: '39031qie1i4aq563',
-                minLatE6: 'pg98bwox95ly0ouu',
-                minLngE6: 'eib1bkq8znpwr0g7',
-                maxLatE6: 'ilfap961rwdybv63',
-                maxLngE6: 'lpf7m1ifx0ieouzq',
-                timestampMs: '2ewujgywmum1yp49',
-                qk: 'bgxibcomzoto63sn',
-                desiredNumItems: 'tmb0vgxgp5grsnhp',
-                minTimestampMs: 'hljqffkpwlx0vtjt',
-                maxTimestampMs: 'sw317giy6x2xj9zm',
-                guids: 'pusjrhxxtyp5nois',
-                inviteeEmailAddress: 'cltkepgqkepfsyaq',
-                message: 'q0d6n7t1801bb6xu',
-                latE6: '5ygbhpxfnt1u9e4t',
-                lngE6: 'ak6twnljwwcgd7cj',
-                factionOnly: '0dvtbatgzcfccchh'
-            },
+        if (window.activeRequestMungeSet===undefined) {
+            window.detectActiveMungeSet();
+        }
 
-            // set 1
-            {
-                method: 'uuo2zqhhy5bw80fu',
-                boundsParamsList: '5rc0561uauf6x13u',
-                id: 'bzeizowtguoyrrtt',
-                minLatE6: '7qej3eqg4sefuaac',
-                minLngE6: 'yqegc976egk5q9vo',
-                maxLatE6: '2odsgh99ix9bbtsb',
-                maxLngE6: 'g9jess8dwa2j8pwi',
-                timestampMs: '604f34zcu9zna0a5',
-                qk: 'y853tux9h7cb6xp3',
-                desiredNumItems: 'sfv5i7l6ouljz8vf',
-                minTimestampMs: 'y3g07dbnw6sklloj',
-                maxTimestampMs: '3pdl28aa27xvyhke',
-                guids: 'xp1pl2jm5hrh3bna',
-                inviteeEmailAddress: '2pyrttrp3gh38mmu',
-                message: 'zz54435vfc57nlg9',
-                latE6: 'cyltxjod3jhxgj8q',
-                lngE6: 'h9whcgcz6kpqkz80',
-                factionOnly: '37okcr7gvd5yn2lj'
-            },
-        ];
-
-        var activeMunge = requestMunges[1];
+        var activeMunge = window.requestParameterMunges[window.activeRequestMungeSet];
 
         function munge(obj) {
             if (Object.prototype.toString.call(obj) === '[object Array]') {

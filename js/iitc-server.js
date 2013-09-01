@@ -500,6 +500,9 @@ IServer.shutdown = function(status, code) {
         case 'afterError':
             debug.log('EXIT', 'Terminating IITC server after a global error occured');
             break;
+        case 'nianticApiFatalError':
+            debug.log('EXIT', 'Due to recent changes to the Niantic/Intel API IITC seems to be broken. Please file an issue or see https://github.com/jonatkins/ingress-intel-total-conversion/issues for more informations.');
+            break;
         default:
             debug.log('EXIT', 'Reason: '+status+'. Bye!');
             break;
@@ -596,6 +599,15 @@ ctx.on('page:default:intelReady', function(evtData) {
         debug.log('APP', 'Waiting for IClient to be initialized');
         if (IServer.isClientLoaded()) {
             debug.log('APP', 'Client initialized. Now running startup script');
+
+            // Due to recent changes of the Niantic/Intel HTTP API (request parameter obfuscation)
+            // which may suddenly break IITC, we first have to assert that IITC is working normal
+            if (page.evaluate(function() {
+                    return (0 === window.activeRequestMungeSet); })) {
+                // IITC is broken
+                IServer.shutdown('nianticApiFatalError', 1);
+            }
+
             page.evaluate(function() {
                 IClient.hideDialogs();
                 IClient.mute(true);
