@@ -3,10 +3,8 @@ var IClient = {
     ctx: null,
 
     initialize: function() {
-        if (null !== this.ctx) {
-            throw(
-                'Client can only be initialized once');
-        }
+        if (null !== this.ctx) throw(
+            'Client can only be initialized once');
         // Create context
         this.ctx = {
             win: window,
