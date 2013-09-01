@@ -49,10 +49,9 @@ The data streaming service does no data evaluation or aggregation. It only colle
 
 # TODO
 
-+ [IClient] Check when all portals in current viewport are loaded, collect their data and pass to IServer
-+ Implement more robust login method (handle invalid login attempts, asf.)
 + Figure out how to effectively persist data and how to expose it to consumer clients
-+ How can we reliably know when all queried tile data has been received? (taking timed out reqs into account)
++ Refactor code and inject context object to prevent nested closures
++ Collect chat data of Resistance faction; create second account
 + Improve algorithm for calculating scanner sectors (reduce overlapping areas and intelligently adjust file size to prevent scanning of outside area)
 + Implement simple locking mechanism for data files
 + Add pid file to prevent multiple iitc-server instances in the same folder
