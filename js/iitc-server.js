@@ -484,6 +484,9 @@ IServer.initialize = function() {
     // Set viewport size of virtual browser window
     ctx.page.viewportSize = ctx.config.browserViewport;
 
+    // Everything is set up, so the actual application can take control
+    ctx.trigger('app:ready', { context: ctx });
+
 }; // END initializer
 
 // BEGIN shutdown
@@ -507,6 +510,7 @@ IServer.shutdown = function(status, code) {
 
 ctx.on('page:default:loadIntel', function(evtData) {
     var page = evtData.page;
+    debug.log('APP', 'Loading Intel website');
     page.open('http://www.ingress.com/intel', function(status) {
         if (status !== 'success') {
             debug.error('APP', 'ERROR: Intel website could not be loaded. Terminating. (' + status + ')');
@@ -626,8 +630,10 @@ ctx.on('page:default:intelReady', function(evtData) {
     }, 3000);
 });
 
+ctx.on('app:ready', function(evtData) {
+    var ctx = evtData.context;
+    ctx.trigger('page:default:loadIntel', { page: ctx.page });
+});
 
 // Application
 IServer.initialize();
-debug.log('APP', 'Loading Intel website');
-ctx.trigger('page:default:loadIntel', { page: ctx.page });
