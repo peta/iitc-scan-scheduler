@@ -11,12 +11,14 @@ if ( ! fs.isFile('config.json')) {
 phantom.injectJs('js/utils.js');
 phantom.injectJs('js/gjv.js');
 
+// Context object; used to maintain application state
 var ctx = new function() {
-    this.config = JSON.parse(fs.read('config.json'));
+    this.config = JSON.parse(fs.read('config.json')) || {};
     this.page = null;
     this.scannerEnabled = !!this.config.scannerService;
 
     // Simple event bus
+
     var events = {};
 
     this.on = function(evt, cb, data) {
@@ -77,11 +79,12 @@ var debug = {
 debug.error = debug.log;
 
 var IServer = {
-    isClientLoaded:    function() {
+    isClientLoaded: function() {
         return !!ctx.page.evaluate(function() {
             return window.iitcLoaded;
         });
     },
+
     captureScreenshot: function(title, timeout) {
         title = title || page.evaluate(function() {
             return document.title;
@@ -98,13 +101,15 @@ var IServer = {
             }, parseInt(timeout));
         }
     },
-    timestamp:         function() {
+
+    timestamp: function() {
         var d = new Date();
         return ('0' + d.getHours()).slice(-2) +
-            ':' + ('0' + d.getMinutes()).slice(-2) +
-            ':' + ('0' + d.getSeconds()).slice(-2);
+               ':' + ('0' + d.getMinutes()).slice(-2) +
+               ':' + ('0' + d.getSeconds()).slice(-2);
     },
-    muteClient:        function(choice) {
+
+    muteClient: function(choice) {
         ctx.page.evaluate(function(choice) {
             IClient.mute(choice);
         }, !!choice);
@@ -166,12 +171,15 @@ IServer.Scanner = {
     scanSector: function(bbox, onFinish) {
         debug.log('SCANNER', IServer.timestamp() + ': Scanning sector', JSON.stringify(bbox));
         ctx.page.evaluate(function(latLngBounds) {
-            IClient.Map.setScanArea(latLngBounds);
+            IClient.Map.startScan(latLngBounds);
         }, bbox);
-        window.setTimeout(function() {
-            debug.log('SCANNER', IServer.timestamp() + ': Finished sector scan');
-            if (typeof onFinish === 'function') onFinish(bbox);
-        }, ctx.config.pauseAfterSectorScan * 1000);
+        // TODO: Think about more efficient way to deal with this one-time callback
+        ctx.once('scanner:sectorScanFinished', function(evtData) {
+            window.setTimeout(function() {
+                debug.log('SCANNER', IServer.timestamp() + ': Finished sector scan');
+                if (typeof onFinish === 'function') onFinish(bbox);
+            }, ctx.config.pauseAfterSectorScan * 1000);
+        });
     },
 
     scan: function(onComplete, debugTiles) {
@@ -190,8 +198,8 @@ IServer.Scanner = {
             debug.log('SCANNER', 'Parsed schedule data file contains ' + features.length + ' features');
 
             // Prepare scan
-            var debugFeatures = [];
-            var fields = [],
+            var debugFeatures = [],
+                fields = [],
                 viewportBBox = ctx.page.evaluate(function(zoom) {
                     // Adjust zoom level so that we can see neutral portales
                     window.map.setZoom(zoom || 17);
@@ -212,17 +220,16 @@ IServer.Scanner = {
                 debug.log('SCANNER', 'Found Polygon feature object', JSON.stringify(bbox));
                 // Generate LatLng boundaries that can directly be consumed by Leaflet
                 var nSectors = 0,
-                    sectors = [];
-                for (var y = bbox[0][0], yMax = bbox[1][0]; y < yMax; y += dY) {
-                    for (var x = bbox[0][1], xMax = bbox[1][1]; x < xMax; x += dX) {
-                        var y2 = y + dY,
-                            x2 = x + dX;
-                        debug.log('SCANNER',
-                            'Added sector #' + (++nSectors) + ' to field #' + (1 + fields.length) + ': (' + x + ',' + y + '),(' + x2 + ',' + y2 + ')');
-                        sectors.push([
-                            [y, x],
-                            [y2, x2]
-                        ]);
+                    sectors = [],
+                    y, yMax,
+                    x, xMax;
+                for (y = bbox[0][0], yMax = bbox[1][0]; y < yMax; y += dY) {
+                    for (x = bbox[0][1], xMax = bbox[1][1]; x < xMax; x += dX) {
+                        y2 = y + dY;
+                        x2 = x + dX;
+                        debug.log('SCANNER', 'Added sector #' + (++nSectors) +
+                            ' to field #' + (1 + fields.length) + ': (' + x + ',' + y + '),(' + x2 + ',' + y2 + ')');
+                        sectors.push([ [y, x], [y2, x2] ]);
                         // Save field boundaries in format that can be plotted by Leaflet
                         // for debugging purposes
                         if (debugTiles) debugFeatures.push({
@@ -292,18 +299,18 @@ IServer.initialize = function() {
             var caption = 'Screenshot at ' + new Date();
             debug.log('ScreenshotService', 'Screenshot requested at ' + new Date());
             resp.writeHead(200, {
-                'Cache':        'no-cache',
+                'Cache': 'no-cache',
                 'Content-Type': 'text/html'
             });
             resp.write('<html><head><title>' + caption + '</title></head><body>');
             resp.write('<div style="text-align:center;">');
             resp.write('<p>' + caption + ' &nbsp;&nbsp;<span><input type="checkbox" id="autorefresh" checked/>Auto-refresh after <input type="text" size="3" id="secs" value="10"/> seconds</span></p><p><img src="data:image/png;base64,' + ctx.page.renderBase64('PNG') + '" width="70%"/></p></div>');
-            resp.write('<script type="text/javascript">var s=document.getElementById("secs"),ar=document.getElementById("autorefresh"),reload=function(){(ar.checked && location.reload())||c();},c=function(){setTimeout(reload, parseInt(s.value)*1000);};s.onchange=function(){this.value=parseInt(this.value)||10;};c();</script></body></html>');
+            resp.write('<script type="text/javascript">var s=document.getElementById("secs"),ar=document.getElementById("autorefresh"),reload=function(){(ar.checked && location.reload())||c();},c=function(){setTimeout(reload,parseInt(s.value)*1000);};s.onchange=function(){this.value=parseInt(this.value)||10;};c();</'+'script></body></html>');
             resp.close();
         });
         console.log((ctx.ssServiceAvail)
-            ? '[SUCCESS] Screenshot webservice available on port ' + ctx.ssPort
-            : '[FAIL] Screnshot webservice could not be started on port ' + ctx.ssPort);
+            ? '[APP] SUCCESS: Screenshot webservice available on port ' + ctx.ssPort
+            : '[APP] FAIL: Screnshot webservice could not be started on port ' + ctx.ssPort);
     }
 
     // Install scanner schedule editor service
@@ -436,8 +443,8 @@ IServer.initialize = function() {
             resp.closeGracefully();
         });
         console.log((ctx.schedulerServiceAvail)
-            ? '[SUCCESS] ScheduleEditor webservice available on port ' + ctx.schedulerPort
-            : '[FAIL] ScheduleEditor webservice could not be started on port ' + ctx.schedulerPort);
+            ? '[APP] SUCCESS: ScheduleEditor webservice available on port ' + ctx.schedulerPort
+            : '[APP] FAIL: ScheduleEditor webservice could not be started on port ' + ctx.schedulerPort);
     }
 
     // Create default page
@@ -470,6 +477,7 @@ IServer.initialize = function() {
             debug.log('PAGE', 'ERROR: ' + msgStack.join('\n'));
         },
         onCallback: function(evtData) {
+            // RPC
             if ('rpc' === evtData.type) {
                 var m = evtData.method;
                 if (typeof IServer.RPC[m] === 'function') {
@@ -477,6 +485,23 @@ IServer.initialize = function() {
                     return IServer.RPC[m](evtData.payload);
                 } else {
                     debug.log('RPC', 'ERROR: No method "' + m + '" found');
+                    return {
+                        method: evtData.method,
+                        status: 1,
+                        response: 'NoSuchMethod',
+                        message: 'Method not found'
+                    }
+                }
+            // Event
+            } else if ('event' === evtData.type) {
+                var name = evtData.event;
+                if (typeof name === 'string' && name.length) {
+                    debug.log('EVENT', 'Intercepted client event "' + name + '"');
+                    ctx.trigger(name, evtData.data, true);
+                    return true;
+                } else {
+                    debug.log('EVENT', 'ERROR: Received invalid event "' + name + '". Ignoring.');
+                    return false;
                 }
             }
         }
@@ -484,7 +509,7 @@ IServer.initialize = function() {
     // Set viewport size of virtual browser window
     ctx.page.viewportSize = ctx.config.browserViewport;
 
-    // Everything is set up, so the actual application can take control
+    // Everything is set up, so the actual application logic may take control
     ctx.trigger('app:ready', { context: ctx });
 
 }; // END initializer
@@ -510,6 +535,9 @@ IServer.shutdown = function(status, code) {
 
     phantom.exit(code || 0);
 }; // END shutdown
+
+
+// Application logic
 
 ctx.on('page:default:loadIntel', function(evtData) {
     var page = evtData.page;
@@ -589,21 +617,20 @@ ctx.on('page:default:authNeeded', function(evtData, state) {
 ctx.on('page:default:intelReady', function(evtData) {
     var page = evtData.page;
 
-    // TODO: Fetch latest release `curl 'http://iitc.jonatkins.com/release/total-conversion-build.user.js'`
+    // TODO: Always fetch latest release from 'http://iitc.jonatkins.com/release/total-conversion-build.user.js'?
     // TODO: Host JS code on external server and use includeJs with callback instead of setTimeouts
-    // Bullshit, `includeJs` doesnt load local resources
     page.injectJs('js/iitc.latest.js');
     page.injectJs('js/iitc-client.js');
 
     window.setTimeout(function() {
-        debug.log('APP', 'Waiting for IClient to be initialized');
+        debug.log('APP', 'Waiting for client to be initialized');
         if (IServer.isClientLoaded()) {
             debug.log('APP', 'Client initialized. Now running startup script');
 
             // Due to recent changes of the Niantic/Intel HTTP API (request parameter obfuscation)
             // which may suddenly break IITC, we first have to assert that IITC is working normal
             if (page.evaluate(function() {
-                    return (0 === window.activeRequestMungeSet); })) {
+                return (0 === window.activeRequestMungeSet); })) {
                 // IITC is broken
                 IServer.shutdown('nianticApiFatalError', 1);
             }
@@ -613,7 +640,7 @@ ctx.on('page:default:intelReady', function(evtData) {
                 IClient.mute(true);
             });
 
-            // Start infinite async scanner loop
+            // Prepare infinite async scanner loop
             var onScanComplete = function() {
                     debug.log('APP', 'Muting client');
                     IServer.muteClient(true);
@@ -632,6 +659,7 @@ ctx.on('page:default:intelReady', function(evtData) {
                         window.setTimeout(arguments.callee, retryAfter * 1000);
                     }
                 };
+            // Enter loop
             startScan();
 
             // TODO: Munge data and persist it. Listen to onScanComplete event.
@@ -647,5 +675,5 @@ ctx.on('app:ready', function(evtData) {
     ctx.trigger('page:default:loadIntel', { page: ctx.page });
 });
 
-// Application
+// Start application
 IServer.initialize();
