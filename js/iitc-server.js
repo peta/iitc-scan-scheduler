@@ -1,7 +1,7 @@
 var fs = require('fs');
 
 // Assert that we have a configuration file
-if (!fs.exists('config.json') || !fs.isFile('config.json')) {
+if ( ! fs.isFile('config.json')) {
     require('system').stderr.writeLine('\nConfiguration file "config.json" not found in application root directory. Terminating.');
     phantom.exit(1);
 } else {
@@ -15,6 +15,55 @@ var ctx = new function() {
     this.config = JSON.parse(fs.read('config.json'));
     this.page = null;
     this.scannerEnabled = !!this.config.scannerService;
+
+    // Simple event bus
+    var events = {};
+
+    this.on = function(evt, cb, data) {
+        var cbs = events[evt] || (events[evt] = []);
+        for (var i=0, j=cbs.length; i < j; i++)
+            if (cb === cbs[i][0]) return this;
+        cbs.push([cb, data || {} ]);
+        return this;
+    };
+
+    this.once = function(evt, cb, data) {
+        var ctx = this;
+        return this.on(evt, function() {
+            cb.apply(null, arguments);
+            ctx.off(evt, arguments.callee);
+        }, data);
+    };
+
+    this.off = function(evt, cb) {
+        var cbs = events[evt];
+        if (cbs) {
+            for (var i=0, j=cbs.length; i < j; i++) {
+                if (cb === cbs[i][0]) {
+                    cbs.splice(i, 1);
+                    break;
+                }
+            }
+        }
+        return this;
+    };
+
+    this.trigger = function(evt, data, async) {
+        var notify = function() {
+            var cbs = events[evt];
+            if (cbs && cbs.length)
+                for (var i=0, j=cbs.length; i < j; i++)
+                    cbs[i][0](data, cbs[i][1]);
+        };
+
+        if (async) {
+            window.setTimeout(notify, 0);
+        } else {
+            notify();
+        }
+
+        return this;
+    };
 };
 
 var debug = {
@@ -130,7 +179,7 @@ IServer.Scanner = {
             scheduleData = null,
             features = [];
 
-        if (fs.exists(scheduleDataFpath) && fs.isFile(scheduleDataFpath)) {
+        if (fs.isFile(scheduleDataFpath)) {
             try {
                 scheduleData = JSON.parse(fs.read(scheduleDataFpath));
                 features = scheduleData.features;
@@ -143,7 +192,7 @@ IServer.Scanner = {
             // Prepare scan
             var debugFeatures = [];
             var fields = [],
-                viewportBBox = page.evaluate(function(zoom) {
+                viewportBBox = ctx.page.evaluate(function(zoom) {
                     // Adjust zoom level so that we can see neutral portales
                     window.map.setZoom(zoom || 17);
                     return window.map.getBounds().toBBoxString()
@@ -248,8 +297,8 @@ IServer.initialize = function() {
             });
             resp.write('<html><head><title>' + caption + '</title></head><body>');
             resp.write('<div style="text-align:center;">');
-            resp.write('<p>' + caption + ' &nbsp;&nbsp;<span><input type="checkbox" id="autorefresh" checked/>Auto-refresh</span></p><p><img src="data:image/png;base64,' + ctx.page.renderBase64('PNG') + '" width="70%"/></p></div>');
-            resp.write('<script type="text/javascript">setInterval(function(){ if(document.getElementById("autorefresh").checked)location.reload();}, 10*1000);</script></body></html>');
+            resp.write('<p>' + caption + ' &nbsp;&nbsp;<span><input type="checkbox" id="autorefresh" checked/>Auto-refresh after <input type="text" size="3" id="secs" value="10"/> seconds</span></p><p><img src="data:image/png;base64,' + ctx.page.renderBase64('PNG') + '" width="70%"/></p></div>');
+            resp.write('<script type="text/javascript">var s=document.getElementById("secs"),ar=document.getElementById("autorefresh"),reload=function(){(ar.checked && location.reload())||c();},c=function(){setTimeout(reload, parseInt(s.value)*1000);};s.onchange=function(){this.value=parseInt(this.value)||10;};c();</script></body></html>');
             resp.close();
         });
         console.log((ctx.ssServiceAvail)
@@ -266,7 +315,7 @@ IServer.initialize = function() {
                 // Static file requested
                 // TODO: Sanitize resource url before using it as file path (directory traversal asf.)
                 var fpath = '.' + req.url;
-                if (fs.exists(fpath) && fs.isFile(fpath)) {
+                if (fs.isFile(fpath)) {
                     var ext = fpath.substr(1 + fpath.lastIndexOf('.')),
                         isImg = (/(png|jpg|jpeg|gif)/i).test(ext),
                         mime = (isImg ? 'image' : 'text') + '/' + ext,
@@ -303,7 +352,7 @@ IServer.initialize = function() {
                     respType = 'text/html';
                     // Load editor file and embed GeoJSON data file
                     respData = fs.read(ctx.config.schedulerHtmlFile);
-                    if (fs.exists(schedDataFpath) && fs.isFile(schedDataFpath))
+                    if (fs.isFile(schedDataFpath))
                         respData = respData.replace('/*GEOJSON_OBJ*/', fs.read(schedDataFpath));
 
                 // Or update schedule database?
@@ -399,16 +448,17 @@ IServer.initialize = function() {
                 loc = ' (from line #' + lineNum + ' in "' + sourceId + '")';
             debug.log('CONSOLE', '' + msg + loc);
         },
-        onLoadFinished:   function(status) {
-            debug.log('PAGE', 'Page loaded: "' + status, arguments.constructor.name + '"');
+        onLoadFinished: function(status) {
+            debug.log('PAGE', 'Page loaded: "' + status, + '"');
+            ctx.trigger('page:default:loadFinished', { page: ctx.page });
         },
-        onLoadStarted:    function() {
-            var currentUrl = page.evaluate(function() {
+        onLoadStarted: function() {
+            var currentUrl = ctx.page.evaluate(function() {
                 return window.location.href;
             });
             debug.log('PAGE', 'Loading: "' + currentUrl + '"');
         },
-        onError:          function(msg, trace) {
+        onError: function(msg, trace) {
             var msgStack = ['ERROR: ' + msg];
             if (trace && trace.length) {
                 msgStack.push('TRACE:');
@@ -419,7 +469,7 @@ IServer.initialize = function() {
             }
             debug.log('PAGE', 'ERROR: ' + msgStack.join('\n'));
         },
-        onCallback:       function(evtData) {
+        onCallback: function(evtData) {
             if ('rpc' === evtData.type) {
                 var m = evtData.method;
                 if (typeof IServer.RPC[m] === 'function') {
@@ -431,6 +481,8 @@ IServer.initialize = function() {
             }
         }
     });
+    // Set viewport size of virtual browser window
+    ctx.page.viewportSize = ctx.config.browserViewport;
 
 }; // END initializer
 
@@ -446,59 +498,89 @@ IServer.shutdown = function(status, code) {
             debug.log('EXIT', 'Terminating IITC server after a global error occured');
             break;
         default:
-            debug.log('EXIT', 'Bye');
+            debug.log('EXIT', 'Reason: '+status+'. Bye!');
             break;
     }
 
     phantom.exit(code || 0);
 }; // END shutdown
 
+ctx.on('page:default:loadIntel', function(evtData) {
+    var page = evtData.page;
+    page.open('http://www.ingress.com/intel', function(status) {
+        if (status !== 'success') {
+            debug.error('APP', 'ERROR: Intel website could not be loaded. Terminating. (' + status + ')');
+            IServer.shutdown('pageLoadError', 1);
+        }
 
-// Application
-IServer.initialize();
+        var page = this,
+            authUrl = page.evaluate(function() {
+                var url = '',
+                    anchors = document.getElementsByTagName('a');
+                for (var i = 0, j = anchors.length; i < j; i++) {
+                    if ('Sign in' == anchors[i].text) {
+                        url = anchors[i].href;
+                        break;
+                    }
+                }
+                return url;
+            });
 
-var page = ctx.page;
-page.viewportSize = ctx.config.browserViewport;
-debug.log('APP', 'Loading Intel website');
-page.open('http://www.ingress.com/intel', function(status) {
-    if (status !== 'success') {
-        debug.error('APP', 'ERROR: Intel website could not be loaded. Terminating. (' + status + ')');
-        IServer.shutdown('pageLoadError', 1);
+        if ('' === authUrl) {
+            // Already logged in, now proceed
+            debug.log('APP', 'Assuming that user session exists and being still active');
+            ctx.trigger('page:default:intelReady', { page: page });
+        } else {
+            // We must log in first
+            ctx.trigger('page:default:authNeeded', {
+                authUrl: authUrl,
+                page: page
+            });
+        }
+    });
+});
+
+ctx.on('page:default:authNeeded', function(evtData, state) {
+    if (state.nTries++ > 3) {
+        debug.error('APP', 'ERROR: Google authentication failed 3 times. Please check login credentials and/or auth code. Terminating');
+        IServer.shutdown('googleAuthError', 1);
         return;
     }
 
-    // Assert user is logged on
-    var authUrl = page.evaluate(function() {
-        var url = '',
-            anchors = document.getElementsByTagName('a');
-        for (var i = 0, j = anchors.length; i < j; i++) {
-            if ('Sign in' == anchors[i].text) {
-                url = anchors[i].href;
-                break;
-            }
-        }
-        return url;
-    });
+    var page = evtData.page,
+        authUrl = evtData.authUrl;
 
-    if (authUrl.length > 0) {
-        debug.log('APP', 'Initiating user session');
-        debug.log('APP', 'Redirecting to auth URL: ' + authUrl);
-        page.open(authUrl, function() {
-            if (status !== 'success') {
-                debug.error('APP', 'Page not successfully opened. Terminating. Mesage: ' + status);
-                IServer.shutdown('pageLoadError', 1);
-            }
-            debug.log('APP', 'Google login page loaded');
-            page.evaluate(function() {
-                document.querySelector('input[name=Email]').value = ctx.config.username;
-                document.querySelector('input[name=Passwd]').value = ctx.config.password;
-                document.getElementById('gaia_loginform').submit();
-            });
-            debug.log('APP', 'User credentials filled in and form submitted');
+    debug.log('APP', 'Initiating user session');
+    debug.log('APP', 'Redirecting to auth URL: ' + authUrl);
+    page.open(authUrl, function(status) {
+        if (status !== 'success') {
+            debug.error('APP', 'Auth page could not be loaded. Terminating. (' + status + ')');
+            IServer.shutdown('pageLoadError', 1);
+        }
+
+        var page = this,
+            cfg = ctx.config;
+
+        debug.log('APP', 'Google login page loaded');
+
+        page.evaluate(function(u, pw) {
+            document.querySelector('input[name=Email]').value = u;
+            document.querySelector('input[name=Passwd]').value = pw;
+            document.getElementById('gaia_loginform').submit();
+        }, cfg.username, cfg.password);
+
+        debug.log('APP', 'User credentials filled in and form submitted');
+
+        // Re-trigger Intel page load after form has bee submitted
+        ctx.once('page:default:loadFinished', function(evtData) {
+            ctx.trigger('page:default:loadIntel', { page: evtData.page });
         });
-    } else {
-        debug.log('APP', 'Assuming that user session exists and being still active');
-    }
+    });
+}, { nTries: 0 });
+
+
+ctx.on('page:default:intelReady', function(evtData) {
+    var page = evtData.page;
 
     // TODO: Fetch latest release `curl 'http://iitc.jonatkins.com/release/total-conversion-build.user.js'`
     // TODO: Host JS code on external server and use includeJs with callback instead of setTimeouts
@@ -542,5 +624,10 @@ page.open('http://www.ingress.com/intel', function(status) {
             window.setTimeout(arguments.callee, 3000);
         }
     }, 3000);
-
 });
+
+
+// Application
+IServer.initialize();
+debug.log('APP', 'Loading Intel website');
+ctx.trigger('page:default:loadIntel', { page: ctx.page });
