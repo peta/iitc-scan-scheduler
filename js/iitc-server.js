@@ -303,7 +303,7 @@ IServer.initialize = function() {
             resp.write('<html><head><title>' + caption + '</title></head><body>');
             resp.write('<div style="text-align:center;">');
             resp.write('<p>' + caption + ' &nbsp;&nbsp;<span><input type="checkbox" id="autorefresh" checked/>Auto-refresh after <input type="text" size="3" id="secs" value="10"/> seconds</span></p><p><img src="data:image/png;base64,' + ctx.page.renderBase64('PNG') + '" width="70%"/></p></div>');
-            resp.write('<script type="text/javascript">var s=document.getElementById("secs"),ar=document.getElementById("autorefresh"),reload=function(){(ar.checked && location.reload())||c();},c=function(){setTimeout(reload,parseInt(s.value)*1000);};s.value=parseInt(document.cookies)||10;s.onchange=function(){this.value=document.cookie=parseInt(this.value)||10;};c();</'+'script></body></html>');
+            resp.write('<script type="text/javascript">var s=document.getElementById("secs"),ar=document.getElementById("autorefresh"),reload=function(){(ar.checked && location.reload())||c();},c=function(){setTimeout(reload,parseInt(s.value)*1000);};s.value=parseInt(document.cookie)||10;s.onchange=function(){this.value=document.cookie=parseInt(this.value)||10;};c();</'+'script></body></html>');
             resp.close();
         });
         console.log((ctx.ssServiceAvail)
