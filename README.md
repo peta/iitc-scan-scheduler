@@ -8,7 +8,6 @@ IMPORTANT: Rename file `config.example.json` to `config.json` and fill in your I
 
 + All time values are SECONDS. No milliseconds. SECONDS.
 + All memory related values are BYTES.
-+ Please use valid username/password (failed login attempts are not handled yet)
 
 # Services
 
@@ -32,13 +31,27 @@ The drawn rectangles are persisted in a flat file as GeoJSON data which is used 
 
 When the phantomJS server starts monitoring, it parses the aforementioned GeoJSON file and iterates over all contained GeoJSON Feature objects and processes each of them. Therefore it takes its geometric boundaries and calculates how many scanner viewports it takes to cover the according map area, based on the used screen size and the zoom level needed to catch Level 1 portals. Optionally debug tile data can be returned that can be plotted on the map for debugging purposes.
 
-Execution is paused (configurable) after each field/sector scan and before the next res-can.
+Execution is paused (configurable) after each field/sector scan and before the next re-scan.
+
+### Debug mode
+
+If you set the config setting `debug` to `true`, the scanner will generate two types of debug data and writes them to a file:
+
+#### Field sectors
+
+The file `data/debug/sectors.json` will contain all generated tiles in GeoJSON format. In order to visualize them, just open [the schedule editor page](http://localhost:9002/scheduler), fire up the webdeveloper dialog and enter the following code:
+
+`L.geoJson(jsonDataFromFile).addTo(map);` whereas `jsonDataFromFile` is the copy&pasted content of the aforementioned JSON file.
+
+#### Portal entities
+
+*IMPLEMENTATION PENDING*
 
 ## Event data streaming service
 
 *IMPLEMENTATION PENDING*
 
-The data streaming service does no data evaluation or aggregation. It only collects the according data, performs simple de-deduplication, filters out personal event data, persists it and exposes an API that can be used by clients to query the data. Data can also be automatically pushed to a pre-configured endpoint.
+The data streaming service does no data evaluation or aggregation. It only collects the according data, performs simple de-duplication, filters out personal event data, persists it and exposes an API that can be used by clients to query the data. Data can also be automatically pushed to a pre-configured endpoint.
 
 ### Pending tasks
 
@@ -49,6 +62,7 @@ The data streaming service does no data evaluation or aggregation. It only colle
 
 # TODO
 
++ When in debug mode, create GeoJSON file with sector outline and all contained portals so that I can test the scanner behaviour
 + Figure out how to effectively persist data and how to expose it to consumer clients
 + Refactor code and inject context object to prevent nested closures
 + Collect chat data of Resistance faction; create second account
