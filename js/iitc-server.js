@@ -138,46 +138,54 @@ IServer.Map = {
 
 IServer.Scanner = {
     scanFields: function(fields, onFinish) {
-        var next = (function(fields, onFinish, idx) {
-            return function() {
+        var next = (function(fields, onFinish, idx, fieldsData) {
+            return function(fieldData) {
+                if (1 === arguments.length) {
+                    fieldsData.push(fieldData);
+                    ctx.trigger('scanner:fieldScanFinished', {
+                        fieldIndex: idx,
+                        fieldData: fieldData
+                    }, true);
+                }
                 if (idx >= fields.length) {
                     debug.log('SCANNER', IServer.timestamp() + ': All fields have been scanned. Done.');
-                    if (typeof onFinish === 'function') onFinish(fields);
+                    if (typeof onFinish === 'function') onFinish(fieldsData);
                     return false;
                 }
-                debug.log('SCANNER', IServer.timestamp() + ': Scanning field', JSON.stringify(fields[idx]));
+                debug.log('SCANNER', IServer.timestamp() + ': Scanning field #'+(1+idx), JSON.stringify(fields[idx]));
                 IServer.Scanner.scanField(fields[idx++], arguments.callee);
             };
-        })(fields, onFinish, 0);
+        })(fields, onFinish, 0, []);
         next();
     },
 
     scanField: function(sectors, onFinish) {
-        var next = (function(sectors, onFinish, idx) {
-            return function() {
+        var next = (function(sectors, onFinish, idx, sectorsData) {
+            return function(sectorData) {
+                if (1 === arguments.length) sectorsData.push(sectorData);
                 if (idx >= sectors.length) {
                     debug.log('SCANNER', IServer.timestamp() + ': Finished field scan');
                     window.setTimeout(function() {
-                        if (typeof onFinish === 'function') onFinish(sectors);
+                        if (typeof onFinish === 'function') onFinish(sectorData);
                     }, ctx.config.pauseAfterFieldScan * 1000);
                     return false;
                 }
-                IServer.Scanner.scanSector(sectors[idx++], arguments.callee);
+                IServer.Scanner.scanSector(sectors[idx], arguments.callee, ++idx);
             };
-        })(sectors, onFinish, 0);
+        })(sectors, onFinish, 0, []);
         next();
     },
 
-    scanSector: function(bbox, onFinish) {
-        debug.log('SCANNER', IServer.timestamp() + ': Scanning sector', JSON.stringify(bbox));
+    scanSector: function(bbox, onFinish, sectorNo) {
+        debug.log('SCANNER', IServer.timestamp() + ': Scanning sector #'+sectorNo, JSON.stringify(bbox));
         ctx.page.evaluate(function(latLngBounds) {
             IClient.Map.startScan(latLngBounds);
         }, bbox);
         // TODO: Think about more efficient way to deal with this one-time callback
-        ctx.once('scanner:sectorScanFinished', function(evtData) {
+        ctx.once('client:scanStopped', function(evtData) {
+            debug.log('SCANNER', IServer.timestamp() + ': Finished sector scan');
             window.setTimeout(function() {
-                debug.log('SCANNER', IServer.timestamp() + ': Finished sector scan');
-                if (typeof onFinish === 'function') onFinish(bbox);
+                if (typeof onFinish === 'function') onFinish(evtData);
             }, ctx.config.pauseAfterSectorScan * 1000);
         });
     },
@@ -187,91 +195,81 @@ IServer.Scanner = {
             scheduleData = null,
             features = [];
 
-        if (fs.isFile(scheduleDataFpath)) {
-            try {
-                scheduleData = JSON.parse(fs.read(scheduleDataFpath));
-                features = scheduleData.features;
-            } catch (exc) {
-                console.log(JSON.stringify(scheduleData));
-            }
+        if ( ! fs.isFile(scheduleDataFpath)) return;
 
-            debug.log('SCANNER', 'Parsed schedule data file contains ' + features.length + ' features');
-
-            // Prepare scan
-            var debugFeatures = [],
-                fields = [],
-                viewportBBox = ctx.page.evaluate(function(zoom) {
-                    // Adjust zoom level so that we can see neutral portales
-                    window.map.setZoom(zoom || 17);
-                    return window.map.getBounds().toBBoxString()
-                        .split(',').map(function(el) {
-                            return parseFloat(el);
-                        });
-                }, ctx.config.defaultZoom),
-                dX = viewportBBox[2] - viewportBBox[0],
-                dY = viewportBBox[3] - viewportBBox[1];
-
-            // Translate field boundaries into Ingress tiles
-            for (var i = 0, j = features.length, feat, bbox; i < j; i++) {
-                feat = features[i];
-                if ('Polygon' !== feat.geometry.type) continue;
-                // Calculate boundary rectangle
-                bbox = IServer.Map.boundingBoxAroundCoords(feat.geometry.coordinates[0]);
-                debug.log('SCANNER', 'Found Polygon feature object', JSON.stringify(bbox));
-                // Generate LatLng boundaries that can directly be consumed by Leaflet
-                var nSectors = 0,
-                    sectors = [],
-                    y, yMax,
-                    x, xMax;
-                for (y = bbox[0][0], yMax = bbox[1][0]; y < yMax; y += dY) {
-                    for (x = bbox[0][1], xMax = bbox[1][1]; x < xMax; x += dX) {
-                        y2 = y + dY;
-                        x2 = x + dX;
-                        debug.log('SCANNER', 'Added sector #' + (++nSectors) +
-                            ' to field #' + (1 + fields.length) + ': (' + x + ',' + y + '),(' + x2 + ',' + y2 + ')');
-                        sectors.push([ [y, x], [y2, x2] ]);
-                        // Save field boundaries in format that can be plotted by Leaflet
-                        // for debugging purposes
-                        if (debugTiles) debugFeatures.push({
-                            "type": "Feature",
-                            "properties": { sectorIdx: scanCounter },
-                            "geometry": {
-                                "type": "Polygon",
-                                "coordinates": [[
-                                    [x, y],
-                                    [x, y + dY],
-                                    [x + dX, y + dY],
-                                    [x + dX, y],
-                                    [x, y]
-                                ]]
-                            }
-                        });
-                    }
-                }
-                fields.push(sectors);
-            }
-
-            // Scan tiles
-            debug.log('SCANNER', IServer.timestamp() + ': Going to scan ' + fields.length + ' fields');
-            IServer.Scanner.scanFields(fields, onComplete);
-            if (debugTiles) return {
-                "type": "FeatureCollection",
-                "features": debugFeatures
-            };
+        try {
+            scheduleData = JSON.parse(fs.read(scheduleDataFpath));
+            features = scheduleData.features;
+        } catch (exc) {
+            console.log(JSON.stringify(scheduleData));
         }
-    }
-};
 
-IServer.RPC = {
-    archiveFactionMsgs: function(msgs) {
-        debug.log('RPC', 'Archiving ' + msgs.result.length + ' faction chat messages');
-    },
-    archivePublicMsgs:  function(msgs) {
-        debug.log('RPC', 'Archiving ' + msgs.result.length + ' public chat messages');
-    },
-    archivePortalData:  function(data) {
-        var portalEntities = JSON.stringify(data);
-        debug.log('RPC', 'Archiving portal data: ' + portalEntities.length + ' entities received');
+        debug.log('SCANNER', 'Parsed schedule data file contains ' + features.length + ' features');
+
+        // Prepare scan
+        var debugFeatures = [],
+            fields = [],
+            viewportBBox = ctx.page.evaluate(function(zoom) {
+                // Adjust zoom level so that we can see neutral portales
+                window.map.setZoom(zoom || 17);
+                return window.map.getBounds().toBBoxString()
+                    .split(',').map(function(el) {
+                        return parseFloat(el);
+                    });
+            }, ctx.config.defaultZoom),
+            dX = viewportBBox[2] - viewportBBox[0],
+            dY = viewportBBox[3] - viewportBBox[1];
+
+        // Translate field boundaries into Ingress tiles
+        var i, j, feat, bbox,
+            nSectors,
+            sectors,
+            y, y2, yMax,
+            x, x2, xMax;
+        for (i=0, j=features.length; i < j; i++) {
+            feat = features[i];
+            if ('Polygon' !== feat.geometry.type) continue;
+            // Calculate boundary rectangle
+            bbox = IServer.Map.boundingBoxAroundCoords(feat.geometry.coordinates[0]);
+            debug.log('SCANNER', 'Found Polygon feature object', JSON.stringify(bbox));
+            // Generate LatLng boundaries that can directly be consumed by Leaflet
+            nSectors = 0;
+            sectors = [];
+            for (y = bbox[0][0], yMax = bbox[1][0]; y < yMax; y += dY) {
+                for (x = bbox[0][1], xMax = bbox[1][1]; x < xMax; x += dX, nSectors++) {
+                    y2 = y + dY;
+                    x2 = x + dX;
+                    debug.log('SCANNER', 'Added sector #' + (1+nSectors) +
+                        ' to field #' + (1 + fields.length) + ': (' + x + ',' + y + '),(' + x2 + ',' + y2 + ')');
+                    sectors.push([ [y, x], [y2, x2] ]);
+                    // Save field boundaries in format that can be plotted by Leaflet
+                    // for debugging purposes
+                    if (debugTiles) debugFeatures.push({
+                        "type": "Feature",
+                        "properties": { sectorIdx: nSectors },
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [[
+                                [x, y],
+                                [x, y + dY],
+                                [x + dX, y + dY],
+                                [x + dX, y],
+                                [x, y]
+                            ]]
+                        }
+                    });
+                }
+            }
+            fields.push(sectors);
+        }
+
+        // Scan tiles
+        debug.log('SCANNER', IServer.timestamp() + ': Going to scan ' + fields.length + ' fields');
+        IServer.Scanner.scanFields(fields, onComplete);
+        if (debugTiles) return {
+            "type": "FeatureCollection",
+            "features": debugFeatures
+        };
     }
 };
 
@@ -305,7 +303,7 @@ IServer.initialize = function() {
             resp.write('<html><head><title>' + caption + '</title></head><body>');
             resp.write('<div style="text-align:center;">');
             resp.write('<p>' + caption + ' &nbsp;&nbsp;<span><input type="checkbox" id="autorefresh" checked/>Auto-refresh after <input type="text" size="3" id="secs" value="10"/> seconds</span></p><p><img src="data:image/png;base64,' + ctx.page.renderBase64('PNG') + '" width="70%"/></p></div>');
-            resp.write('<script type="text/javascript">var s=document.getElementById("secs"),ar=document.getElementById("autorefresh"),reload=function(){(ar.checked && location.reload())||c();},c=function(){setTimeout(reload,parseInt(s.value)*1000);};s.onchange=function(){this.value=parseInt(this.value)||10;};c();</'+'script></body></html>');
+            resp.write('<script type="text/javascript">var s=document.getElementById("secs"),ar=document.getElementById("autorefresh"),reload=function(){(ar.checked && location.reload())||c();},c=function(){setTimeout(reload,parseInt(s.value)*1000);};s.value=parseInt(document.cookies)||10;s.onchange=function(){this.value=document.cookie=parseInt(this.value)||10;};c();</'+'script></body></html>');
             resp.close();
         });
         console.log((ctx.ssServiceAvail)
@@ -496,7 +494,7 @@ IServer.initialize = function() {
             } else if ('event' === evtData.type) {
                 var name = evtData.event;
                 if (typeof name === 'string' && name.length) {
-                    debug.log('EVENT', 'Intercepted client event "' + name + '"');
+                    debug.log('EVENT', IServer.timestamp() + ': Intercepted client event "' + name + '"');
                     ctx.trigger(name, evtData.data, true);
                     return true;
                 } else {
@@ -649,9 +647,20 @@ ctx.on('page:default:intelReady', function(evtData) {
                 startScan = function() {
                     if (ctx.scannerEnabled) {
                         debug.log('SCANNER', IServer.timestamp() + ': Starting scan');
-                        debug.log('APP', 'Un-Muting client');
+                        debug.log('APP', 'Un-muting client');
                         IServer.muteClient(false);
-                        IServer.Scanner.scan(onScanComplete);
+                        var debugData = IServer.Scanner.scan(onScanComplete, ctx.config.debug),
+                            tmpFpath = fs.absolute('data/debug/sectors.json');
+                        if (ctx.config.debug && undefined !== debugData) {
+                            var tmpStream = fs.open(tmpFpath, 'w');
+                            debug.log('DEBUG', 'Dumping scanner sectors as GeoJSON data to file: '+tmpFpath);
+                            tmpStream.write(JSON.stringify(debugData));
+                            tmpStream.flush();
+                            tmpStream.close();
+                        } else if (fs.isFile(tmpFpath)) {
+                            // Remove debug file from previous run
+                            fs.remove(tmpFpath);
+                        }
                     } else {
                         var retryAfter = ctx.config.pauseBeforeRescan * 2;
                         debug.log('SCANNER',
@@ -659,15 +668,18 @@ ctx.on('page:default:intelReady', function(evtData) {
                         window.setTimeout(arguments.callee, retryAfter * 1000);
                     }
                 };
+
             // Enter loop
             startScan();
-
-            // TODO: Munge data and persist it. Listen to onScanComplete event.
-
         } else {
             window.setTimeout(arguments.callee, 3000);
         }
     }, 3000);
+});
+
+ctx.on('scanner:fieldScanFinished', function(evtData) {
+    debug.log('APP', 'Received data of field #'+evtData.fieldIndex+' ('+JSON.stringify(evtData.fieldData).length+'B)');
+    // TODO: Process received data (munge, de-dup and persist it)
 });
 
 ctx.on('app:ready', function(evtData) {
