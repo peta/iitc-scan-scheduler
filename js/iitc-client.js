@@ -160,8 +160,10 @@ IClient.Map = {
         var ctx = IClient.getContext();
         // Abort all pending chat/portal data requests
         window.requests.abort();
-
+        // Create new state object
         ctx.tmpScanData = {
+            timestamp: Date.now(),
+            area: latLngBounds,
             portalsLoaded: false,
             portals: [],
             chatLoaded: false,
@@ -183,7 +185,7 @@ IClient.Map = {
             (tmpData.chatLoaded ? 'YES' : 'NO')+'  Portal data loaded? '+ (tmpData.portalsLoaded ? 'YES' : 'NO'));
         ctx.tmpScanData = null;
         // Tell server that scan has been stopped
-        return IClient.sendEvent('scanner:sectorScanFinished', {
+        return IClient.sendEvent('client:scanStopped', {
             chat: tmpData.chat,
             portals: tmpData.portals
         });
