@@ -681,6 +681,30 @@ ctx.on('page:default:intelReady', function(evtData) {
     }, 3000);
 });
 
+// Debug
+if (ctx.config.debug) {
+    ctx.on('scanner:scanFinished', function(evtData) {
+        var ts = new Date();
+        ts = ts.getFullYear() +
+             '-' + ('0' + ts.getMonth()).slice(-2) +
+             '-' + ('0' + ts.getDate()).slice(-2) +
+             '_' + ('0' + ts.getHours()).slice(-2) +
+             '-' + ('0' + ts.getMinutes()).slice(-2) +
+             '-' + ('0' + ts.getSeconds()).slice(-2);
+        var fPath = fs.absolute('data/scans/'+ts+'.json');
+        debug.log('DEBUG', 'Dumping scan results (fields and data) to file: '+fPath);
+        var fStream = fs.open(fPath, 'w');
+        fStream.write(JSON.stringify({
+            timestamp: Date.now(),
+            format: 1,
+            sectors: evtData.sectors,
+
+        }));
+        fStream.flush();
+        fStream.close();
+    });
+}
+
 ctx.on('scanner:fieldScanFinished', function(evtData) {
     debug.log('APP', 'Received data of field #'+evtData.fieldIndex+' ('+JSON.stringify(evtData.fieldData).length+'B)');
     // TODO: Process received data (munge, de-dup and persist it)
