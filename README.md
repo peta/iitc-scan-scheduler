@@ -45,7 +45,9 @@ The file `data/debug/sectors.json` will contain all generated tiles in GeoJSON f
 
 #### Portal entities
 
-*IMPLEMENTATION PENDING*
+*IMPLEMENTATION INCOMPLETE*
+
+Right now only the raw and unprocessed event data (received by a listener to "scanner:scanFinished") is written to timestamp-named JSON file that is placed inside the `data/scans` folder. Note that this data still contains duplicates and isn't reasonably normalized.
 
 ## Event data streaming service
 
@@ -62,6 +64,8 @@ The data streaming service does no data evaluation or aggregation. It only colle
 
 # TODO
 
++ Add random jitter factor to pauses between scan operations
++ Store every external script file (iitc, plugins) in private GitHub Gist and introduce ghetto update checker that reloads default page when new versions are available
 + When in debug mode, create GeoJSON file with sector outline and all contained portals so that I can test the scanner behaviour
 + Figure out how to effectively persist data and how to expose it to consumer clients
 + Refactor code and inject context object to prevent nested closures
