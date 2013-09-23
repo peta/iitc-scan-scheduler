@@ -150,6 +150,10 @@ IServer.Scanner = {
                 if (idx >= fields.length) {
                     debug.log('SCANNER', IServer.timestamp() + ': All fields have been scanned. Done.');
                     if (typeof onFinish === 'function') onFinish(fieldsData);
+                    ctx.trigger('scanner:scanFinished', {
+                        fields: fields,
+                        fieldsData: fieldsData
+                    }, true);
                     return false;
                 }
                 debug.log('SCANNER', IServer.timestamp() + ': Scanning field #'+(1+idx), JSON.stringify(fields[idx]));
@@ -311,7 +315,7 @@ IServer.initialize = function() {
             : '[APP] FAIL: Screnshot webservice could not be started on port ' + ctx.ssPort);
     }
 
-    // Install scanner schedule editor service
+    // Install scan scheduler service
     if (ctx.config.scannerService) {
         ctx.schedulerPort = ctx.config.scannerServicePort;
         ctx.schedulerServer = require('webserver').create();
