@@ -1,6 +1,11 @@
 # 24/7 Intel event scanner and aggregation server application
 
-IMPORTANT: In order to use this application you need a working binary of phantomJS version 1.9.1. Here you can find prebuilt binaries and the source code: [http://phantomjs.org/download.html](http://phantomjs.org/download.html)
+IMPORTANT: In order to use this application you need a working binary of phantomJS version 1.9.1. You can find prebuilt binaries and sources at: [http://phantomjs.org/download.html](http://phantomjs.org/download.html)
+
+CAUTION: By using IITC to access the Ingress API you violate Niantic's ToS. This might lead to a permanent account suspension. Use it at your own risk.
+
+For a quick overview about this application you can find a [screencast video I recorded a while back (german only) at YouTube](http://www.youtube.com/watch?v=102rjqaxyqQ).
+
 
 ## Configuration file
 
@@ -64,6 +69,9 @@ The data streaming service does no data evaluation or aggregation. It only colle
 
 # TODO
 
++ [editor] Restrict access to editor by asking for a username/password pair that will be matched against a separate entry in the config file (`users:{user1:pass1,...}`)
++ [client] Make sure that all new events since last scan are gathered (finish when already known event GUID is reached) 
++ User may choose zoom level individually for every scanner field
 + Add random jitter factor to pauses between scan operations
 + Store every external script file (iitc, plugins) in private GitHub Gist and introduce ghetto update checker that reloads default page when new versions are available
 + When in debug mode, create GeoJSON file with sector outline and all contained portals so that I can test the scanner behaviour
